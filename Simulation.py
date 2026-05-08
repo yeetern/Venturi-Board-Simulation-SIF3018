@@ -1,15 +1,21 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+
+# =========================================================
+# PAGE SETUP
+# =========================================================
 
 st.set_page_config(
-    page_title="Venturi Board Ventilation Simulation",
+    page_title="Venturi Board Apparent Temperature Simulation",
     layout="wide"
 )
 
-st.title("Venturi Board Ventilation Simulation")
+st.title("Venturi Board Apparent Temperature Simulation")
 st.caption(
-    "A simplified physics-based hypothesis model for food stall ventilation using a plastic-bottle Venturi board."
+    "A first-order model estimating how airflow enhancement changes apparent temperature "
+    "at a semi-open food stall."
 )
 
 # =========================================================
@@ -18,345 +24,382 @@ st.caption(
 
 st.sidebar.header("Environmental Parameters")
 
-T_in = st.sidebar.slider("Ambient Temperature, T_in (°C)", 25.0, 45.0, 34.0, 0.5)
-RH = st.sidebar.slider("Relative Humidity, RH (%)", 30.0, 100.0, 70.0, 1.0)
-wind_speed = st.sidebar.slider("Outdoor Wind Speed (m/s)", 0.0, 8.0, 2.0, 0.1)
-wind_angle = st.sidebar.slider("Wind Angle Relative to Board Normal (degree)", 0, 90, 20, 1)
+T_air = st.sidebar.slider(
+    "Ambient Temperature, T_air (°C)",
+    25.0, 45.0, 34.0, 0.5
+)
 
-st.sidebar.header("Venturi Bottle Parameters")
+RH = st.sidebar.slider(
+    "Relative Humidity, RH (%)",
+    30.0, 100.0, 70.0, 1.0
+)
 
-R_big_cm = st.sidebar.slider("Large Radius of Bottle, R_big (cm)", 3.5, 6.0, 4.5, 0.1)
-R_small_cm = st.sidebar.slider("Small Radius of Bottle Neck, R_small (cm)", 1.2, 2.0, 1.5, 0.1)
-N_bottles = st.sidebar.slider("Number of Bottles", 1, 80, 45, 1)
-Cd = st.sidebar.slider("Discharge Coefficient, Cd", 0.30, 1.00, 0.70, 0.05)
+wind_speed = st.sidebar.slider(
+    "Outdoor Wind Speed, v_wind (m/s)",
+    0.0, 8.0, 2.0, 0.1
+)
 
-st.sidebar.header("Board Geometry")
+wind_angle = st.sidebar.slider(
+    "Wind Incident Angle, θ (degree)",
+    0, 90, 20, 1
+)
 
-board_width_cm = st.sidebar.slider("Board Width (cm)", 100, 200, 150, 5)
-board_height_cm = st.sidebar.slider("Board Height (cm)", 20, 60, 30, 5)
+st.sidebar.header("Bottle / Board Parameters")
 
-max_speed_ratio = st.sidebar.slider("Maximum Allowed Speed Amplification", 1.0, 5.0, 3.0, 0.1)
+R_big_cm = st.sidebar.slider(
+    "Large Opening Radius, R_big (cm)",
+    3.5, 6.0, 4.5, 0.1
+)
+
+R_small_cm = st.sidebar.slider(
+    "Small Neck Radius, R_small (cm)",
+    1.2, 2.0, 1.5, 0.1
+)
+
+N_bottles = st.sidebar.slider(
+    "Number of Bottles",
+    1, 80, 36, 1
+)
+
+board_width_cm = st.sidebar.slider(
+    "Board Width (cm)",
+    30, 200, 30, 5
+)
+
+board_height_cm = st.sidebar.slider(
+    "Board Height (cm)",
+    30, 150, 120, 5
+)
+
+st.sidebar.header("Empirical Airflow Factors")
+
+r_max = st.sidebar.slider(
+    "Maximum Velocity Amplification, r",
+    1.0, 5.0, 3.0, 0.1,
+    help=(
+        "Capped maximum amplification factor. "
+        "The ideal area ratio may be larger, but the real passive system is limited."
+    )
+)
+
+Cd = st.sidebar.slider(
+    "Discharge Coefficient, Cd",
+    0.30, 1.00, 0.70, 0.05,
+    help="Represents friction, turbulence, leakage, and imperfect bottle geometry."
+)
+
+f_eff = st.sidebar.slider(
+    "Effective Felt-Airflow Factor, f_eff",
+    0.10, 1.00, 0.50, 0.05,
+    help="Fraction of outlet airflow that effectively reaches the user."
+)
 
 # =========================================================
-# UNIT CONVERSION
+# CALCULATION FUNCTIONS
 # =========================================================
+
+def vapour_pressure_hpa(T_c: float, RH_percent: float) -> float:
+    """
+    Water vapour pressure in hPa.
+
+    The 6.105 coefficient gives saturation vapour pressure in hPa.
+    Therefore the Steadman coefficient used later is 0.33.
+    """
+    return (RH_percent / 100) * 6.105 * np.exp((17.27 * T_c) / (237.7 + T_c))
+
+
+def apparent_temperature(T_c: float, RH_percent: float, v_ms: float) -> float:
+    """
+    Steadman apparent temperature approximation.
+
+    AT = T_air + 0.33e - 0.70v - 4.00
+
+    where:
+    - T_air is in °C
+    - e is water vapour pressure in hPa
+    - v is local wind speed in m/s
+    """
+    e_hpa = vapour_pressure_hpa(T_c, RH_percent)
+    return T_c + 0.33 * e_hpa - 0.70 * v_ms - 4.00
+
+# =========================================================
+# GEOMETRY AND AIRFLOW MODEL
+# =========================================================
+
+theta = np.deg2rad(wind_angle)
 
 R_big = R_big_cm / 100
 R_small = R_small_cm / 100
 board_width = board_width_cm / 100
 board_height = board_height_cm / 100
 
-# =========================================================
-# GEOMETRY CALCULATION
-# =========================================================
-
-theta = np.deg2rad(wind_angle)
-
-A_board = board_width * board_height
 A_big = np.pi * R_big**2
 A_small = np.pi * R_small**2
+A_board = board_width * board_height
 
+geometric_area_ratio = A_big / A_small if A_small > 0 else np.nan
+used_amplification = min(geometric_area_ratio, r_max)
+
+# Wind component normal to the board
+v_eff = wind_speed * max(np.cos(theta), 0)
+
+# Outlet and felt wind
+v_out_ideal = used_amplification * v_eff
+v_out = Cd * v_out_ideal
+v_feel = f_eff * v_out
+
+# Apparent temperature before and after
+AT_before = apparent_temperature(T_air, RH, v_eff)
+AT_after = apparent_temperature(T_air, RH, v_feel)
+AT_change = AT_before - AT_after
+
+# Geometry metrics
 total_big_area = N_bottles * A_big
 total_small_area = N_bottles * A_small
-
-radius_ratio = R_big / R_small
-area_ratio = A_big / A_small
-
-open_area_ratio = total_big_area / A_board if A_board > 0 else 0
-blockage_ratio = 1 - open_area_ratio
-blockage_ratio = max(min(blockage_ratio, 1), 0)
+inlet_coverage = total_big_area / A_board if A_board > 0 else np.nan
+throat_open_fraction = total_small_area / A_board if A_board > 0 else np.nan
 
 # =========================================================
-# AIRFLOW MODEL
+# MODEL SUMMARY
 # =========================================================
 
-v_effective = wind_speed * max(np.cos(theta), 0)
+st.subheader("1. Model Summary")
 
-v_out_ideal = v_effective * area_ratio
-v_out = Cd * v_out_ideal
-v_out = min(v_out, max_speed_ratio * wind_speed)
+col1, col2 = st.columns([1.1, 1])
 
-Q_open = A_board * v_effective
-Q_venturi = total_small_area * v_out
+with col1:
+    st.markdown(
+        """
+This model estimates how the Venturi board changes the **local wind speed felt by the user**, then uses the Steadman apparent temperature equation to estimate perceived comfort.
 
-airflow_ratio = Q_venturi / Q_open if Q_open > 0 else 0
-
-# =========================================================
-# THERMAL COMFORT MODEL
-# =========================================================
-
-if v_out > 0 and T_in > 26:
-    cooling_effect = (
-        0.7
-        * (v_out ** 0.7)
-        * (1 - RH / 100)
-        * (T_in - 26)
-    )
-else:
-    cooling_effect = 0
-
-cooling_effect = max(cooling_effect, 0)
-cooling_effect = min(cooling_effect, 6.0)
-
-T_perceived = T_in - cooling_effect
-
-# =========================================================
-# MAIN RESULTS
-# =========================================================
-
-st.subheader("Simulation Results")
-
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Effective Incoming Wind", f"{v_effective:.2f} m/s")
-col2.metric("Outlet Wind Speed", f"{v_out:.2f} m/s")
-col3.metric("Open-Area Airflow", f"{Q_open:.3f} m³/s")
-col4.metric("Venturi Airflow", f"{Q_venturi:.3f} m³/s")
-
-col5, col6, col7, col8 = st.columns(4)
-col5.metric("Airflow Ratio", f"{airflow_ratio:.2f}")
-col6.metric("Blockage Ratio", f"{blockage_ratio * 100:.1f}%")
-col7.metric("Estimated Cooling Effect", f"{cooling_effect:.2f} °C")
-col8.metric("Perceived Temperature", f"{T_perceived:.2f} °C")
-
-# =========================================================
-# GEOMETRY RESULTS
-# =========================================================
-
-st.subheader("Geometry and Design Parameters")
-
-col9, col10, col11, col12 = st.columns(4)
-col9.metric("Board Size", f"{board_width_cm} cm × {board_height_cm} cm")
-col10.metric("Number of Bottles", f"{N_bottles}")
-col11.metric("Radius Ratio", f"{radius_ratio:.2f}")
-col12.metric("Area Ratio", f"{area_ratio:.2f}")
-
-col13, col14, col15, col16 = st.columns(4)
-col13.metric("Large Radius", f"{R_big_cm:.1f} cm")
-col14.metric("Small Radius", f"{R_small_cm:.1f} cm")
-col15.metric("Bottle Coverage", f"{open_area_ratio * 100:.1f}%")
-col16.metric("Board Area", f"{A_board:.3f} m²")
-
-# =========================================================
-# PHYSICAL INTERPRETATION
-# =========================================================
-
-st.subheader("Physical Interpretation")
-
-if wind_speed == 0:
-    st.info("No external wind is present. A passive Venturi board cannot generate airflow without incoming wind.")
-elif airflow_ratio < 0.5:
-    st.error(
-        "The Venturi board strongly reduces total airflow. "
-        "Although local outlet wind speed increases, whole-stall ventilation may become worse."
-    )
-elif airflow_ratio < 1.0:
-    st.warning(
-        "The Venturi board increases local outlet wind speed, but total airflow is lower than the open-area case."
-    )
-else:
-    st.success(
-        "The Venturi board gives comparable or higher airflow than the open-area case in this simplified model."
-    )
-
-if blockage_ratio > 0.70:
-    st.warning(
-        "High blockage ratio: most of the board blocks incoming wind. "
-        "Try increasing bottle coverage or reducing the board area."
-    )
-
-if open_area_ratio > 0.85:
-    st.warning(
-        "Bottle coverage is very high. Check whether the bottles can physically fit without overlap."
-    )
-
-if radius_ratio > 4:
-    st.warning("The radius ratio is large. Check whether the bottle geometry is physically realistic.")
-
-if wind_angle > 60:
-    st.warning(
-        "Large wind angle: the wind is not hitting the board directly, so effective airflow is strongly reduced."
-    )
-
-st.markdown(
-    """
-### Model meaning
-
-This model separates two effects:
-
-1. **Local velocity increase**  
-   The smaller bottle neck can increase local outlet wind speed.
-
-2. **Global blockage effect**  
-   The board blocks part of the incoming wind, so the total airflow may decrease.
-
-For your prototype, the design goal is not only to increase wind speed, but also to maximize the usable bottle coverage on the board.
+The simulation focuses on **apparent temperature reduction**, not actual air-temperature reduction.
 """
+    )
+
+    st.latex(r"v_{\mathrm{eff}} = v_{\mathrm{wind}}\cos\theta")
+    st.latex(r"v_{\mathrm{feel}} = f_{\mathrm{eff}}\,C_d\,r\,v_{\mathrm{eff}}")
+    st.latex(r"AT = T_{\mathrm{air}} + 0.33e - 0.70v - 4.00")
+
+    st.caption(
+        "Here, e is water vapour pressure in hPa, and v is the local wind speed used in the apparent temperature equation."
+    )
+
+with col2:
+    summary_df = pd.DataFrame(
+        {
+            "Quantity": [
+                "Ambient temperature",
+                "Relative humidity",
+                "Water vapour pressure",
+                "Outdoor wind speed",
+                "Effective incoming wind",
+                "Felt wind after board",
+                "Apparent temperature before",
+                "Apparent temperature after",
+                "Apparent cooling effect",
+            ],
+            "Value": [
+                f"{T_air:.1f} °C",
+                f"{RH:.0f} %",
+                f"{vapour_pressure_hpa(T_air, RH):.2f} hPa",
+                f"{wind_speed:.2f} m/s",
+                f"{v_eff:.2f} m/s",
+                f"{v_feel:.2f} m/s",
+                f"{AT_before:.2f} °C",
+                f"{AT_after:.2f} °C",
+                f"{max(AT_change, 0):.2f} °C",
+            ],
+        }
+    )
+    st.dataframe(summary_df, hide_index=True, use_container_width=True)
+
+# =========================================================
+# KEY METRICS
+# =========================================================
+
+st.subheader("2. Key Output")
+
+m1, m2, m3, m4 = st.columns(4)
+
+m1.metric("Effective Incoming Wind", f"{v_eff:.2f} m/s")
+m2.metric("Felt Wind After Board", f"{v_feel:.2f} m/s")
+m3.metric("AT Before", f"{AT_before:.2f} °C")
+m4.metric("AT After", f"{AT_after:.2f} °C", delta=f"{-AT_change:.2f} °C")
+
+st.metric(
+    "Estimated Apparent Cooling Effect",
+    f"{max(AT_change, 0):.2f} °C",
+    help="Positive value means the model predicts lower apparent temperature after installation."
 )
 
-# =========================================================
-# DETAILED TABLE
-# =========================================================
-
-st.subheader("Detailed Parameters and Results")
-
-data = {
-    "Quantity": [
-        "Ambient temperature",
-        "Relative humidity",
-        "Outdoor wind speed",
-        "Wind angle",
-        "Effective incoming wind",
-        "Board width",
-        "Board height",
-        "Board area",
-        "Large bottle radius",
-        "Small bottle radius",
-        "Number of bottles",
-        "Single large opening area",
-        "Single small opening area",
-        "Total large opening area",
-        "Total small opening area",
-        "Bottle coverage",
-        "Blockage ratio",
-        "Radius ratio",
-        "Area ratio",
-        "Discharge coefficient",
-        "Ideal outlet wind speed",
-        "Capped outlet wind speed",
-        "Open-area airflow",
-        "Venturi airflow",
-        "Airflow ratio",
-        "Estimated cooling effect",
-        "Actual temperature",
-        "Perceived temperature"
-    ],
-    "Value": [
-        f"{T_in:.2f} °C",
-        f"{RH:.1f} %",
-        f"{wind_speed:.2f} m/s",
-        f"{wind_angle:.1f}°",
-        f"{v_effective:.3f} m/s",
-        f"{board_width:.2f} m",
-        f"{board_height:.2f} m",
-        f"{A_board:.3f} m²",
-        f"{R_big_cm:.2f} cm",
-        f"{R_small_cm:.2f} cm",
-        f"{N_bottles}",
-        f"{A_big:.5f} m²",
-        f"{A_small:.5f} m²",
-        f"{total_big_area:.5f} m²",
-        f"{total_small_area:.5f} m²",
-        f"{open_area_ratio * 100:.2f} %",
-        f"{blockage_ratio * 100:.2f} %",
-        f"{radius_ratio:.3f}",
-        f"{area_ratio:.3f}",
-        f"{Cd:.2f}",
-        f"{v_out_ideal:.3f} m/s",
-        f"{v_out:.3f} m/s",
-        f"{Q_open:.5f} m³/s",
-        f"{Q_venturi:.5f} m³/s",
-        f"{airflow_ratio:.3f}",
-        f"{cooling_effect:.3f} °C",
-        f"{T_in:.2f} °C",
-        f"{T_perceived:.2f} °C"
-    ]
-}
-
-df = pd.DataFrame(data)
-st.dataframe(df, use_container_width=True)
+if AT_change <= 0:
+    st.warning(
+        "Under the current settings, the model does not predict an apparent cooling improvement. "
+        "This usually means the felt wind after the board is not higher than the baseline effective wind."
+    )
+elif AT_change < 0.7:
+    st.info("The predicted apparent cooling effect is small under the current settings.")
+elif AT_change <= 2.0:
+    st.success("The predicted apparent cooling effect is within the expected 0.7–2.0 °C range.")
+else:
+    st.warning(
+        "The predicted apparent cooling effect is above 2.0 °C. "
+        "Check whether r, Cd, or f_eff is too optimistic."
+    )
 
 # =========================================================
-# CHARTS
+# USEFUL PLOTS
 # =========================================================
 
-st.subheader("Airflow Comparison")
+st.subheader("3. Useful Plots")
 
-airflow_df = pd.DataFrame({
-    "Case": ["Open Area", "Venturi Board"],
-    "Airflow Rate (m³/s)": [Q_open, Q_venturi]
-})
+# Plot 1: AT vs local wind speed
+local_wind_range = np.linspace(0, 8, 200)
+AT_local_wind = np.array([apparent_temperature(T_air, RH, v) for v in local_wind_range])
 
-st.bar_chart(airflow_df.set_index("Case"))
+fig1, ax1 = plt.subplots(figsize=(8, 4.5))
+ax1.plot(local_wind_range, AT_local_wind, linewidth=2)
+ax1.scatter([v_eff], [AT_before], s=80, label="Before installation")
+ax1.scatter([v_feel], [AT_after], s=80, label="After installation")
+ax1.set_xlabel("Local wind speed used in AT equation, v (m/s)")
+ax1.set_ylabel("Apparent temperature, AT (°C)")
+ax1.set_title(f"Apparent Temperature vs Wind Speed\nT = {T_air:.1f} °C, RH = {RH:.0f}% held constant")
+ax1.grid(True, alpha=0.3)
+ax1.legend()
+st.pyplot(fig1, use_container_width=True)
 
-st.subheader("Temperature Comparison")
+st.caption(
+    "This is the cleanest graph for presentation: temperature and humidity are fixed, "
+    "so the curve shows only how apparent temperature changes with wind speed."
+)
 
-temp_df = pd.DataFrame({
-    "Case": ["Actual Air Temperature", "Perceived Temperature"],
-    "Temperature (°C)": [T_in, T_perceived]
-})
+# Plot 2: Before vs after AT
+before_after_df = pd.DataFrame(
+    {
+        "Case": ["Before", "After"],
+        "Apparent Temperature (°C)": [AT_before, AT_after],
+    }
+)
 
-st.bar_chart(temp_df.set_index("Case"))
+fig2, ax2 = plt.subplots(figsize=(6, 4))
+ax2.bar(before_after_df["Case"], before_after_df["Apparent Temperature (°C)"])
+ax2.set_ylabel("Apparent temperature, AT (°C)")
+ax2.set_title("Before vs After Apparent Temperature")
+ax2.grid(axis="y", alpha=0.3)
+
+for i, value in enumerate(before_after_df["Apparent Temperature (°C)"]):
+    ax2.text(i, value, f"{value:.2f} °C", ha="center", va="bottom")
+
+st.pyplot(fig2, use_container_width=True)
+
+# Plot 3: Outdoor wind sweep
+wind_range = np.linspace(0, 8, 200)
+v_eff_sweep = wind_range * max(np.cos(theta), 0)
+v_feel_sweep = f_eff * Cd * used_amplification * v_eff_sweep
+AT_before_sweep = np.array([apparent_temperature(T_air, RH, v) for v in v_eff_sweep])
+AT_after_sweep = np.array([apparent_temperature(T_air, RH, v) for v in v_feel_sweep])
+AT_improvement_sweep = AT_before_sweep - AT_after_sweep
+
+fig3, ax3 = plt.subplots(figsize=(8, 4.5))
+ax3.plot(wind_range, AT_improvement_sweep, linewidth=2)
+ax3.axhspan(0.7, 2.0, alpha=0.15, label="Expected useful range: 0.7–2.0 °C")
+ax3.axhline(0, linestyle="--", linewidth=1)
+ax3.set_xlabel("Outdoor wind speed, v_wind (m/s)")
+ax3.set_ylabel("Apparent cooling effect, ΔAT (°C)")
+ax3.set_title("Predicted Apparent Cooling Effect vs Outdoor Wind Speed")
+ax3.grid(True, alpha=0.3)
+ax3.legend()
+st.pyplot(fig3, use_container_width=True)
 
 # =========================================================
-# SENSITIVITY ANALYSIS
+# DESIGN CHECKS
 # =========================================================
 
-st.subheader("Wind Speed Sensitivity")
+st.subheader("4. Design Checks")
 
-wind_range = np.linspace(0, 8, 50)
-cooling_list = []
-vout_list = []
-qventuri_list = []
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Geometric Area Ratio", f"{geometric_area_ratio:.2f}")
+c2.metric("Used Amplification r", f"{used_amplification:.2f}")
+c3.metric("Inlet Coverage", f"{inlet_coverage * 100:.1f}%")
+c4.metric("Throat Open Fraction", f"{throat_open_fraction * 100:.1f}%")
 
-for v in wind_range:
-    v_eff = v * max(np.cos(theta), 0)
-    v_ideal = v_eff * area_ratio
-    v_real = Cd * v_ideal
-    v_real = min(v_real, max_speed_ratio * v)
+if inlet_coverage > 1:
+    st.error("Bottle inlet area exceeds board area. The bottle layout is physically impossible without overlap.")
+elif inlet_coverage > 0.85:
+    st.warning("Bottle inlet coverage is very high. Check whether bottles can physically fit on the board.")
+else:
+    st.success("Bottle inlet coverage is within a physically reasonable range.")
 
-    q_v = total_small_area * v_real
+if geometric_area_ratio > r_max:
+    st.info(
+        "The ideal geometric area ratio is larger than the chosen maximum amplification. "
+        "The model uses the capped empirical value r instead of the full ideal area ratio."
+    )
 
-    if v_real > 0 and T_in > 26:
-        cool = 0.7 * (v_real ** 0.7) * (1 - RH / 100) * (T_in - 26)
-    else:
-        cool = 0
+# =========================================================
+# EXPORTABLE TABLE
+# =========================================================
 
-    cool = max(cool, 0)
-    cool = min(cool, 6.0)
+st.subheader("5. Presentation Table")
 
-    vout_list.append(v_real)
-    cooling_list.append(cool)
-    qventuri_list.append(q_v)
+presentation_df = pd.DataFrame(
+    {
+        "Parameter / Result": [
+            "Ambient temperature",
+            "Relative humidity",
+            "Outdoor wind speed",
+            "Wind incident angle",
+            "Discharge coefficient",
+            "Amplification factor used",
+            "Effective airflow factor",
+            "Effective wind before",
+            "Felt wind after",
+            "Apparent temperature before",
+            "Apparent temperature after",
+            "Apparent cooling effect",
+        ],
+        "Value": [
+            f"{T_air:.1f} °C",
+            f"{RH:.0f} %",
+            f"{wind_speed:.2f} m/s",
+            f"{wind_angle:.0f}°",
+            f"{Cd:.2f}",
+            f"{used_amplification:.2f}",
+            f"{f_eff:.2f}",
+            f"{v_eff:.2f} m/s",
+            f"{v_feel:.2f} m/s",
+            f"{AT_before:.2f} °C",
+            f"{AT_after:.2f} °C",
+            f"{max(AT_change, 0):.2f} °C",
+        ],
+    }
+)
 
-sensitivity_df = pd.DataFrame({
-    "Outdoor Wind Speed (m/s)": wind_range,
-    "Outlet Wind Speed (m/s)": vout_list,
-    "Venturi Airflow (m³/s)": qventuri_list,
-    "Estimated Cooling Effect (°C)": cooling_list
-})
+st.dataframe(presentation_df, hide_index=True, use_container_width=True)
 
-st.line_chart(sensitivity_df.set_index("Outdoor Wind Speed (m/s)"))
+csv = presentation_df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    "Download presentation table as CSV",
+    data=csv,
+    file_name="venturi_apparent_temperature_results.csv",
+    mime="text/csv",
+)
 
 # =========================================================
 # ASSUMPTIONS
 # =========================================================
 
-st.subheader("Assumptions and Limitations")
-
-st.markdown(
-    """
-- The model assumes steady incoming wind.
-- Only the wind component perpendicular to the board is used.
-- The Venturi effect is approximated using the continuity equation.
-- Energy losses are represented by the discharge coefficient, Cd.
-- Unrealistic velocity amplification is capped.
-- Bottle coverage is estimated from total large-opening area divided by board area.
-- The board may increase local wind speed but reduce total airflow.
-- The cooling effect is a perceived thermal comfort estimate, not true air temperature reduction.
-- The model does not solve turbulence, recirculation, cooking heat, side leakage, or full CFD.
-- Real experimental data is required for calibration.
+with st.expander("Assumptions and Limitations"):
+    st.markdown(
+        """
+- Incoming wind is assumed steady during each simulation case.
+- Wind direction matters; only the component normal to the board is used.
+- Air density is treated as approximately constant.
+- Bottles are assumed identical.
+- The velocity amplification factor is capped instead of using the full ideal area ratio.
+- Losses are represented by the discharge coefficient, Cd.
+- Airflow spreading and distance from the board are represented by f_eff.
+- Apparent temperature is used as the comfort indicator.
+- The model is not CFD and does not prove actual air-temperature reduction.
 """
-)
-
-# =========================================================
-# PROJECT STATEMENT
-# =========================================================
-
-st.subheader("Suggested Project Statement")
-
-st.info(
-    "This simulation acts as a physics-based hypothesis model. "
-    "It predicts how a plastic-bottle Venturi board may change local outlet wind speed, "
-    "total airflow rate, blockage ratio, bottle coverage, and perceived thermal comfort. "
-    "The predicted results can later be compared with real measurements before and after installation."
-)
+    )

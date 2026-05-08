@@ -1,346 +1,666 @@
 # Venturi Board Ventilation Simulation
 
-A simplified physics-based simulation for evaluating airflow behavior and perceived thermal comfort in a tropical food stall environment using a **plastic-bottle Venturi board**.
+A simplified physics-based Streamlit simulation for evaluating a **plastic-bottle Venturi board** as a passive local airflow amplifier for tropical food stall environments.
 
-This project investigates whether a low-cost passive ventilation prototype can improve **localized airflow** and **perceived cooling** for food stall workers under hot and humid outdoor conditions.
+The model estimates whether a low-cost prototype can increase the **local wind speed felt by a person** and reduce **apparent temperature** under hot and humid conditions.
+
+This project is designed for a *Physics for Work* context, where fundamental physics principles are applied to a real community/workplace problem.
 
 ---
 
 ## 1. Project Overview
 
-This simulation was developed as part of a *Physics for Work* project, where fundamental physics principles are applied to real-world workplace problems.
+Semi-open food stalls in tropical environments often experience thermal discomfort due to:
 
-The prototype concept is based on a board fitted with recycled plastic bottles. Each bottle acts as a simplified nozzle: air enters through a larger opening and exits through a smaller neck. The model estimates whether this geometry can increase local outlet wind speed and improve perceived thermal comfort.
+- high ambient temperature,
+- high relative humidity,
+- weak natural wind,
+- cooking heat,
+- limited access to active cooling systems.
 
-The simulation follows the simplified pipeline:
+The proposed prototype is a board fitted with recycled plastic bottles. Each bottle acts as a simplified converging nozzle: air enters through the larger bottle mouth and exits through the smaller bottle neck.
+
+The simulation treats this setup as a **passive local airflow amplifier**.
+
+The simplified model pipeline is:
 
 ```text
-Geometry → Airflow → Local Velocity → Perceived Cooling
-````
+Environment + Geometry
+→ Effective Incoming Wind
+→ Capped Velocity Amplification
+→ Loss-Corrected Outlet Wind
+→ Felt Wind Speed
+→ Apparent Temperature Before/After
+```
 
-The model is intended as a **hypothesis-generation tool** before prototype testing. It is not intended to replace experimental measurements or full Computational Fluid Dynamics (CFD).
+This model is intended as a **hypothesis-generation and design-evaluation tool** before physical prototype testing. It is not a substitute for experimental measurements or full Computational Fluid Dynamics (CFD).
 
 ---
 
-## 2. Research Question
+## 2. Main Research Question
 
 The main question addressed by this simulation is:
 
-> Does a plastic-bottle Venturi board improve overall ventilation, or does it mainly produce localized high-speed airflow?
+> Can a plastic-bottle Venturi board increase the local wind speed felt by workers or customers enough to produce a measurable improvement in apparent thermal comfort?
 
-This distinction is important because a Venturi-like geometry may increase local outlet velocity while simultaneously reducing total airflow due to blockage.
+The project does **not** claim that the prototype significantly lowers actual air temperature.
+
+Instead, the goal is to evaluate whether the board can improve **localized perceived comfort** through directed airflow.
 
 ---
 
-## 3. Model Capabilities
+## 3. What the Dashboard Estimates
 
 The Streamlit dashboard estimates:
 
-* Effective incoming wind speed
-* Outlet wind speed
-* Open-area airflow rate
-* Venturi-board airflow rate
-* Airflow ratio
-* Bottle coverage ratio
-* Blockage ratio
-* Estimated perceived cooling effect
-* Perceived temperature
-* Sensitivity of performance to wind speed
+* effective incoming wind speed,
+* capped speed amplification ratio,
+* ideal outlet wind speed,
+* real outlet wind speed after losses,
+* felt wind speed at the user position,
+* water vapour pressure,
+* apparent temperature before installation,
+* apparent temperature after installation,
+* apparent cooling improvement,
+* geometry and packing parameters,
+* sensitivity to wind speed,
+* sensitivity to relative humidity.
 
-These outputs allow the user to compare the ideal open-area case with the proposed Venturi-board configuration.
+The model intentionally focuses on **local wind-speed transformation**, not total airflow rate through the board.
 
 ---
 
 ## 4. Environmental Context
 
-The model is designed for tropical outdoor food stall conditions, such as those commonly found in Kampung Baru, Kuala Lumpur.
+The model is designed for tropical semi-open food stall conditions, such as those commonly found in Kampung Baru, Kuala Lumpur.
 
-Typical operating conditions include:
+Typical operating conditions may include:
 
 | Parameter                           | Typical Range |
 | ----------------------------------- | ------------: |
-| Ambient temperature                 |       30–35°C |
+| Ambient temperature                 |      30–35 °C |
 | Relative humidity                   |        70–90% |
-| Outdoor wind speed                  |   0.5–2.0 m/s |
+| Outdoor wind speed                  |  ~0.3–1.7 m/s |
 | Wind angle relative to board normal |         0–60° |
+
+For reference:
+
+$$
+1~\text{km/h} = 0.278~\text{m/s}
+$$
+
+So a local wind speed of (1–6km/h) corresponds to approximately:
+
+$$
+0.28\text{–}1.67~\text{m/s}
+$$
 
 ### Key Implication
 
-High humidity and low natural wind speed limit the performance of passive cooling systems. Therefore, the design should not be expected to reduce actual air temperature significantly. Instead, its main potential benefit is improving **localized perceived cooling** through directed airflow.
+Under weak natural wind, a passive Venturi board cannot create strong cooling by itself. Its realistic role is to slightly improve localized comfort by directing and accelerating available airflow.
 
 ---
 
-## 5. Physical Model
+## 5. Fluid Model
 
-### 5.1 Wind Direction Correction
+The model does not use total airflow (Q) as the main success metric.
 
-Only the wind component normal to the board is assumed to contribute to flow through the bottle openings:
+Instead, it follows the wind-speed chain:
 
-```math
-v_{\text{effective}} = v_{\text{wind}}\cos\theta
-```
+$$
+v_{\text{wind}}
+\rightarrow
+v_{\text{eff}}
+\rightarrow
+v_{\text{out,ideal}}
+\rightarrow
+v_{\text{out}}
+\rightarrow
+v_{\text{feel}}
+$$
+
+---
+
+### 5.1 Wind-Angle Correction
+
+Only the wind component normal to the board is assumed to enter the bottle openings:
+
+$$
+v_{\text{eff}} = v_{\text{wind}}\cos\theta
+$$
 
 where:
 
-* (v_{\text{wind}}) is the outdoor wind speed
-* (\theta) is the wind angle relative to the board normal
-* (v_{\text{effective}}) is the usable incoming wind speed
+| Symbol            | Meaning                             |
+| ----------------- | ----------------------------------- |
+| $v_{wind}$ | outdoor wind speed                  |
+| $\theta$          | wind angle relative to board normal |
+| $v_{eff}$  | effective incoming wind speed       |
 
-When the wind hits the board directly, (\theta = 0^\circ), and the effective wind speed is maximum. When the wind is nearly parallel to the board, the effective flow through the bottles becomes small.
+If the wind hits the board directly:
+
+$$
+\theta = 0^\circ
+$$
+
+then:
+
+$$
+v_{\text{eff}} = v_{\text{wind}}
+$$
+
+If the wind is nearly parallel to the board:
+
+$$
+\theta \approx 90^\circ
+$$
+
+then:
+
+$$
+v_{\text{eff}} \approx 0
+$$
+
+This represents a key limitation of the design: the board only works well when incoming wind is reasonably aligned with the bottle openings.
 
 ---
 
-### 5.2 Continuity-Based Velocity Estimate
+### 5.2 Capped Velocity Amplification
 
-The outlet velocity is estimated using the continuity equation:
+For an ideal incompressible flow, the continuity equation suggests:
 
-```math
-A_1 v_1 = A_2 v_2
-```
+$
+A_1v_1 = A_2v_2
+$
 
 For a bottle-nozzle approximation:
 
-```math
-v_{\text{out, ideal}} = v_{\text{effective}} \frac{A_{\text{big}}}{A_{\text{small}}}
-```
+$
+\frac{v_2}{v_1}=
+\frac{A_{\text{big}}}{A_{\text{small}}}
+$
 
 where:
 
-* (A_{\text{big}}) is the large bottle opening area
-* (A_{\text{small}}) is the bottle neck area
-* (v_{\text{out, ideal}}) is the ideal outlet velocity
+| Symbol             | Meaning                 |
+| ------------------ | ----------------------- |
+| $A_{\text{big}}$   | large bottle-mouth area |
+| $A_{\text{small}}$ | bottle-neck area        |
 
-Since real airflow involves losses, the model introduces a discharge coefficient:
+However, a real passive plastic-bottle system cannot fully achieve an ideal geometric area-ratio amplification because of:
 
-```math
-v_{\text{out}} = C_d v_{\text{out, ideal}}
-```
+* turbulence,
+* friction,
+* flow separation,
+* leakage,
+* imperfect bottle cutting,
+* nonuniform incoming wind,
+* poor alignment.
 
-or:
+Therefore, the simulation uses a capped speed-amplification ratio:
 
-```math
-v_{\text{out}} = C_d v_{\text{effective}} \frac{A_{\text{big}}}{A_{\text{small}}}
-```
+$$
+r =
+\min
+\left(
+\frac{A_{\text{big}}}{A_{\text{small}}},
+r_{\max}
+\right)
+$$
 
 where:
 
-* (C_d) is the discharge coefficient
-* (0 < C_d \leq 1)
-* lower (C_d) represents stronger losses due to friction, turbulence, separation, and imperfect bottle geometry
+| Symbol     | Meaning                             |
+| ---------- | ----------------------------------- |
+| $r$        | used speed amplification ratio      |
+| $r_{\max}$ | maximum allowed speed amplification |
 
-To avoid unrealistic velocity predictions, the outlet velocity is capped by a maximum speed amplification factor.
+This avoids overclaiming unrealistic outlet speeds.
 
 ---
 
-### 5.3 Airflow Rate Comparison
+### 5.3 Ideal Outlet Wind Speed
 
-The model compares two airflow cases.
+The ideal outlet wind speed is calculated as:
 
-#### Case 1: Open Area
+$$
+v_{\text{out,ideal}} = r v_{\text{eff}}
+$$
 
-The open-area case represents the airflow that would pass through the same board area if there were no blockage:
+This represents the outlet speed before internal losses are applied.
 
-```math
-Q_{\text{open}} = A_{\text{board}} v_{\text{effective}}
-```
+---
 
-#### Case 2: Venturi Board
+### 5.4 Discharge Coefficient
 
-The Venturi-board airflow is estimated using the total neck area of all bottles:
+Real airflow through a bottle nozzle is not lossless. The model introduces a discharge coefficient:
 
-```math
-Q_{\text{venturi}} = N A_{\text{small}} v_{\text{out}}
-```
+$$
+v_{\text{out}} = C_d v_{\text{out,ideal}}
+$$
+
+or equivalently:
+
+$$
+v_{\text{out}} = C_d r v_{\text{eff}}
+$$
 
 where:
 
-* (N) is the number of bottles
-* (A_{\text{small}}) is the area of one bottle neck
-* (v_{\text{out}}) is the estimated outlet velocity
+| Symbol           | Meaning                |
+| ---------------- | ---------------------- |
+| $C_d$            | discharge coefficient  |
+| $v_{\text{out}}$ | real outlet wind speed |
 
-The airflow ratio is then:
+A lower $C_d$ represents stronger loss due to:
 
-```math
-\text{Airflow Ratio} = \frac{Q_{\text{venturi}}}{Q_{\text{open}}}
-```
+* turbulence,
+* rough bottle edges,
+* friction,
+* leakage,
+* flow separation,
+* imperfect construction.
 
-This ratio helps determine whether the board improves total airflow or mainly produces localized velocity enhancement.
+Typical assumed values:
+
+$$
+0.5 \lesssim C_d \lesssim 0.8
+$$
+
+The actual value should be calibrated experimentally using an anemometer.
+
+---
+
+### 5.5 Effective Wind Factor
+
+The outlet wind speed at the bottle neck is not necessarily the same wind speed felt by the worker or customer.
+
+The jet may:
+
+* spread out,
+* weaken with distance,
+* miss the person,
+* mix with surrounding air,
+* be blocked by objects.
+
+Therefore, the model defines:
+
+$$
+v_{\text{feel}} = f_{\text{eff}}v_{\text{out}}
+$$
+
+where:
+
+| Symbol            | Meaning                                   |
+| ----------------- | ----------------------------------------- |
+| $f_{\text{eff}}$  | effective wind factor                     |
+| $v_{\text{feel}}$ | wind speed effectively felt by the person |
+
+Typical assumed values:
+
+$$
+0 \leq f_{\text{eff}} \leq 1.0
+$$
+
+A value of $f_{\text{eff}} = 1.0$ means the full outlet wind reaches the person, which is usually optimistic.
+
+A more realistic value may be:
+
+$$
+0.3 \text{–} 0.7
+$$
+
+depending on placement and distance.
 
 ---
 
 ## 6. Geometry Model
 
-The board area is calculated as:
+The board area is:
 
-```math
+$$
 A_{\text{board}} = W \times H
-```
+$$
 
-The circular bottle opening areas are:
+The bottle-mouth area is:
 
-```math
+$$
 A_{\text{big}} = \pi R_{\text{big}}^2
-```
+$$
 
-```math
+The bottle-neck area is:
+
+$$
 A_{\text{small}} = \pi R_{\text{small}}^2
-```
-
-The bottle coverage ratio is:
-
-```math
-\text{Coverage Ratio} = \frac{N A_{\text{big}}}{A_{\text{board}}}
-```
-
-The blockage ratio is:
-
-```math
-\text{Blockage Ratio} = 1 - \text{Coverage Ratio}
-```
-
-A high blockage ratio means that most of the board blocks incoming wind. This may reduce total ventilation even if the bottle necks increase local outlet speed.
-
----
-
-## 7. Perceived Thermal Comfort Model
-
-The simulation uses a simplified empirical perceived-cooling approximation:
-
-```math
-\Delta T_{\text{cool}} =
-0.7 v_{\text{out}}^{0.7}
-\left(1 - \frac{RH}{100}\right)
-(T_{\text{in}} - 26)
-```
-
-The perceived temperature is then estimated as:
-
-```math
-T_{\text{perceived}} = T_{\text{in}} - \Delta T_{\text{cool}}
-```
+$$
 
 where:
 
-* (v_{\text{out}}) is the estimated outlet wind speed
-* (RH) is the relative humidity in percent
-* (T_{\text{in}}) is the ambient temperature
-* (26^\circ\text{C}) is treated as an assumed comfort baseline
-* (\Delta T_{\text{cool}}) is the estimated perceived cooling effect
+| Symbol             | Meaning                      |
+| ------------------ | ---------------------------- |
+| $W$               | board width                  |
+| $H$                | board height                 |
+| $R_{\text{big}}$   | radius of large bottle mouth |
+| $R_{\text{small}}$ | radius of bottle neck        |
 
-### Important Clarification
+The total projected bottle-mouth area is:
 
-This formula is **not a standard ASHRAE PMV/SET model** and is **not the NOAA heat index equation**. It is a project-specific empirical approximation based on physical assumptions:
+$$
+A_{\text{big,total}} = N A_{\text{big}}
+$$
 
-1. Higher air speed improves convective and evaporative cooling.
-2. Higher humidity reduces evaporative cooling effectiveness.
-3. Cooling benefit becomes more relevant when ambient temperature exceeds a comfort baseline.
-4. The cooling effect is perceived cooling, not actual thermodynamic air temperature reduction.
+The total throat area is:
 
-Therefore, the model should be interpreted as a **thermal comfort proxy**, not a validated human comfort index.
+$$
+A_{\text{small,total}} = N A_{\text{small}}
+$$
 
----
-
-## 8. Prototype Configuration
-
-Typical simulation parameters:
-
-| Parameter                   |      Typical Value |
-| --------------------------- | -----------------: |
-| Board dimensions            | 120–150 cm × 30 cm |
-| Large bottle radius         |         4.5–5.0 cm |
-| Bottle neck radius          |         1.5–1.6 cm |
-| Number of bottles           |              36–45 |
-| Discharge coefficient       |            0.6–0.8 |
-| Maximum speed amplification |               2–3× |
-
-### Design Objective
-
-The design aims to balance two competing effects:
-
-1. **Velocity enhancement**
-   A smaller outlet area can increase local outlet wind speed.
-
-2. **Blockage reduction**
-   Excessive board blockage can reduce total airflow.
-
-The best design is therefore not necessarily the one with the highest speed amplification, but the one that provides useful directed airflow without excessively blocking the incoming wind.
+where $N$ is the number of bottles.
 
 ---
 
-## 9. Assumptions
+### 6.1 Inlet Coverage
 
-### 9.1 Airflow Assumptions
+The inlet coverage ratio is:
+
+$$
+\text{Inlet Coverage}=
+\frac{N A_{\text{big}}}{A_{\text{board}}}
+$$
+
+This estimates how much of the board face is occupied by the large bottle-mouth footprint.
+
+It is a **geometry/packing metric**, not the main airflow-success metric.
+
+---
+
+### 6.2 Inlet Blockage
+
+The inlet blockage ratio is:
+
+$$
+\text{Inlet Blockage}=
+1 -
+\text{Inlet Coverage}
+$$
+
+This describes the fraction of the board face that is not occupied by bottle-mouth inlet area.
+
+---
+
+### 6.3 Throat Open-Area Fraction
+
+The throat open-area fraction is:
+
+$$
+\text{Throat Open Fraction}=
+\frac{N A_{\text{small}}}{A_{\text{board}}}
+$$
+
+This tells how much of the board area corresponds to the small bottle-neck openings.
+
+---
+
+### 6.4 Throat Restriction
+
+The throat restriction ratio is:
+
+$$
+\text{Throat Restriction}=
+1 -
+\frac{A_{\text{small}}}{A_{\text{big}}}
+$$
+
+This measures the geometric contraction from the large bottle mouth to the small bottle neck.
+
+A high throat restriction can produce faster local outlet wind, but it also means the system is highly dependent on losses and alignment.
+
+---
+
+## 7. Apparent Temperature Model
+
+The simulation uses the Steadman apparent-temperature formulation to estimate perceived thermal comfort before and after installation.
+
+The apparent temperature is calculated as:
+
+$$
+AT = T_a + 0.33e - 0.70v - 4.00
+$$
+
+where:
+
+| Symbol | Meaning                            |
+| ------ | ---------------------------------- |
+| $AT$   | apparent temperature in °C         |
+| $T_a$  | ambient dry-bulb temperature in °C |
+| $e$    | water vapour pressure in hPa       |
+| $v$    | effective local wind speed in m/s  |
+
+The water vapour pressure is estimated from relative humidity:
+
+$$
+e =
+\frac{RH}{100}
+\times
+6.105
+\times
+\exp
+\left(
+\frac{17.27T_a}{237.7 + T_a}
+\right)
+$$
+
+where:
+
+| Symbol | Meaning                       |
+| ------ | ----------------------------- |
+| $RH$   | relative humidity in percent  |
+| $T_a$  | ambient air temperature in °C |
+
+This model estimates perceived heat stress, not actual air-temperature reduction.
+
+---
+
+## 8. Before-and-After Comparison
+
+The key comparison is:
+
+$$
+\Delta AT =
+AT_{\text{before}}-
+AT_{\text{after}}
+$$
+
+Before installation:
+
+$$
+AT_{\text{before}}=
+T_a + 0.33e - 0.70v_{\text{before}} - 4.00
+$$
+
+with:
+
+$$
+v_{\text{before}} = v_{\text{eff}}
+$$
+
+After installation:
+
+$$
+AT_{\text{after}}=
+T_a + 0.33e - 0.70v_{\text{after}} - 4.00
+$$
+
+with:
+
+$$
+v_{\text{after}} = v_{\text{feel}}
+$$
+
+If:
+
+$$
+\Delta AT > 0
+$$
+
+then the simulation predicts an improvement in apparent thermal comfort.
+
+---
+
+## 9. Important Interpretation
+
+The Venturi board does **not** directly lower the actual air temperature.
+
+The expected physical behaviour is:
+
+$$
+T_{\text{actual, after}}
+\approx
+T_{\text{actual, before}}
+$$
+
+but:
+
+$$
+v_{\text{feel, after}}>
+v_{\text{before}}
+$$
+
+may reduce apparent temperature.
+
+Therefore, the model output should be interpreted as:
+
+> predicted improvement in perceived thermal comfort,
+
+not:
+
+> actual thermodynamic cooling of the surrounding air.
+
+Under high humidity, apparent temperature may be higher than actual air temperature. This is expected because humid air reduces sweat evaporation and increases perceived heat stress.
+
+---
+
+## 10. Example Prototype Configuration
+
+The current prototype concept uses:
+
+| Quantity                    |               Value |
+| --------------------------- | ------------------: |
+| Board size                  |      120 cm × 30 cm |
+| Layout                      | 3 columns × 12 rows |
+| Number of bottles           |                  36 |
+| Large bottle-mouth diameter |              ~95 mm |
+| Bottle-neck hole diameter   |           ~30–32 mm |
+| Nominal bottle-neck radius  |             ~1.5 cm |
+
+### Design Advantage
+
+The 3 × 12 layout increases the number of distributed local jets and improves the chance that airflow reaches the worker or customer.
+
+### Design Risk
+
+The bottle necks are much smaller than the bottle mouths. This increases local speed but makes the result sensitive to:
+
+* discharge losses,
+* poor alignment,
+* weak natural wind,
+* distance from the user,
+* whether the jet reaches the person.
+
+---
+
+## 11. Assumptions
+
+### 11.1 Fluid Assumptions
 
 * The incoming wind is steady.
-* Only the wind component normal to the board is considered.
-* The bottle geometry is approximated as a simplified nozzle.
-* The continuity equation is used as a first-order approximation.
-* Energy losses are represented by a single discharge coefficient, (C_d).
-* Unrealistic outlet velocities are limited using a maximum amplification cap.
+* Only the wind component perpendicular to the board is used.
+* The bottle array is modeled as a capped local velocity amplifier.
+* The full geometric area ratio is not assumed to be fully achievable.
+* The used speed amplification ratio is limited by $r_{\max}$.
+* Energy losses inside the bottle/nozzle are represented by $C_d$.
+* Delivery losses from the outlet jet to the person are represented by $f_{\text{eff}}$.
+* The model focuses on local wind-speed transformation rather than total airflow rate.
 
-### 9.2 Geometry Assumptions
+### 11.2 Geometry Assumptions
 
 * Bottles are uniformly distributed across the board.
 * Bottle openings are approximated as circular.
+* Bottle-mouth footprint and bottle-neck throat area are treated separately.
 * Bottle overlap and structural interference are not fully modeled.
-* The total open area is estimated from the sum of bottle opening areas.
+* Inlet coverage is treated as a packing/geometry indicator, not a guarantee of captured airflow.
 
-### 9.3 Thermal Comfort Assumptions
+### 11.3 Thermal Comfort Assumptions
 
-* Increased outlet velocity improves perceived cooling.
-* Higher relative humidity reduces evaporative cooling.
-* The cooling effect is expressed as an equivalent perceived temperature reduction.
+* Apparent temperature is estimated using the Steadman apparent-temperature model.
+* The model estimates perceived thermal comfort, not true air-temperature reduction.
+* Apparent temperature can be higher than actual air temperature under humid conditions.
+* The key result is $AT_{\text{before}} - AT_{\text{after}}$.
 * Radiative heat from cooking equipment is not included.
-* Human factors such as clothing, metabolic rate, and sweating rate are not included.
+* Direct solar radiation is not included.
+* Clothing, metabolic rate, sweating rate, and posture are not included.
+* Distance-dependent jet decay is not explicitly modeled.
 
 ---
 
-## 10. Limitations
+## 12. Limitations
 
 This model has several important limitations:
 
 * It is not a CFD simulation.
 * It does not solve the Navier–Stokes equations.
 * It does not model turbulence, recirculation, vortex shedding, or flow separation.
-* It does not include cooking heat, solar radiation, or radiant heat from hot surfaces.
 * It does not simulate full spatial airflow distribution inside the stall.
-* The perceived cooling equation is not a validated thermal comfort standard.
-* The discharge coefficient and cooling parameters require experimental calibration.
+* It does not include cooking heat, solar radiation, or radiant heat from hot surfaces.
+* It does not calculate total airflow rate as the main performance metric.
+* The discharge coefficient $C_d$ requires experimental calibration.
+* The maximum amplification ratio $r_{\max}$ is an assumption and should be calibrated.
+* The effective wind factor $f_{\text{eff}}$ requires experimental or user-feedback calibration.
+* Steadman apparent temperature is a simplified thermal-stress estimate and does not replace detailed indices such as PMV, SET, or UTCI.
 
 ### Critical Limitation
 
-The model should be treated as an **upper-bound and first-order estimate**, not an exact prediction of real-world performance.
+The model should be treated as a **first-order hypothesis model**, not an exact prediction of real-world performance.
 
 ---
 
-## 11. Expected Findings
+## 13. Expected Findings
 
-Based on the simplified model, the following behavior is expected:
+Based on the simplified model, the following behaviour is expected:
 
 1. The Venturi-board configuration can increase local outlet wind speed.
-2. Total airflow may decrease if blockage is too high.
-3. High humidity reduces the effectiveness of perceived cooling.
+2. The felt wind speed depends strongly on $f_{\text{eff}}$.
+3. High humidity increases apparent temperature.
 4. Wind direction strongly affects performance.
-5. The system is more likely to improve localized comfort than reduce ambient air temperature.
+5. Weak natural wind limits passive performance.
+6. Apparent-temperature improvement may be small under low-wind conditions.
+7. The system is more likely to improve localized comfort than reduce actual ambient temperature.
 
 ### Main Interpretation
 
-The plastic-bottle Venturi board should be evaluated primarily as a **localized airflow and perceived-cooling device**, not as a system that lowers the actual surrounding air temperature.
+The plastic-bottle Venturi board should be evaluated primarily as a:
+
+> passive local airflow amplifier,
+
+not as:
+
+> a system that lowers the actual surrounding air temperature.
 
 ---
 
-## 12. Experimental Validation Plan
+## 14. Experimental Validation Plan
 
 To validate the model, real measurements should be collected before and after prototype installation.
 
 Suggested measurements:
 
-* Wind speed before installation
-* Wind speed after installation
-* Outlet wind speed at bottle necks
-* Temperature near the vendor working area
-* Relative humidity
-* Vendor comfort feedback
+* ambient wind speed before installation,
+* outlet wind speed at the bottle necks,
+* wind speed at the worker/customer position before installation,
+* wind speed at the worker/customer position after installation,
+* ambient temperature,
+* relative humidity,
+* vendor comfort feedback.
 
 A simple feedback scale can be used:
 
@@ -352,30 +672,33 @@ A simple feedback scale can be used:
 |      4 | Slightly improved   |
 |      5 | Clearly improved    |
 
-Experimental data can then be used to calibrate:
+Experimental data can be used to calibrate:
 
-* Discharge coefficient, (C_d)
-* Cooling coefficient
-* Velocity exponent
-* Humidity correction factor
+* $C_d$,
+* $r_{\max}$,
+* $f_{\text{eff}}$,
+* practical comfort response.
 
 ---
 
-## 13. Future Improvements
+## 15. Future Improvements
 
 Possible improvements include:
 
-* Calibrating the model using experimental data
-* Replacing the custom cooling approximation with PMV or SET-based comfort calculations
-* Adding radiant heat effects from cooking equipment
-* Comparing different bottle layouts
-* Comparing different hole sizes and spacing
-* Testing different board angles relative to incoming wind
-* Performing CFD simulation for detailed airflow visualization
+* calibrating the model using experimental data,
+* adding a two-board or multi-board coverage model,
+* comparing different bottle layouts,
+* comparing different bottle-neck diameters,
+* testing different board angles relative to incoming wind,
+* adding distance-dependent airflow decay,
+* adding fan-assisted airflow conditions,
+* adding radiant heat effects from cooking equipment,
+* performing CFD simulation for detailed airflow visualization,
+* comparing Steadman apparent temperature with PMV, SET, or UTCI.
 
 ---
 
-## 14. Installation and Usage
+## 16. Installation and Usage
 
 ### Requirements
 
@@ -388,36 +711,77 @@ Possible improvements include:
 
 ```bash
 pip install streamlit numpy pandas
-```
 
 ### Run the Application
 
-```bash
+streamlit run simulation.py
+
+or:
+
 python -m streamlit run simulation.py
+
 ```
 
 ---
 
-## 15. Intended Applications
+## 17. Suggested File Structure
+
+```text
+venturi-board-simulation/
+│
+├── simulation.py
+├── README.md
+```
+
+Example `requirements.txt`:
+
+```text
+streamlit
+numpy
+pandas
+```
+
+---
+
+## 18. Intended Applications
 
 This simulation can be used for:
 
-* Physics-based hypothesis testing
-* Preliminary design evaluation
-* Educational demonstration of airflow and continuity equation concepts
-* Supporting prototype planning before field testing
-* Comparing simulated predictions with experimental measurements
+* physics-based hypothesis testing,
+* preliminary prototype evaluation,
+* educational demonstration of continuity and airflow concepts,
+* supporting prototype planning before field testing,
+* explaining the limits of passive ventilation,
+* comparing simulated predictions with anemometer measurements.
 
 ---
 
-## 16. Project Statement
+## 19. Citation
 
-This project presents a simplified physics-based model for evaluating a plastic-bottle Venturi board as a passive ventilation prototype for tropical food stall environments. The model estimates local airflow enhancement, total airflow change, blockage ratio, and perceived cooling effect. The results are intended to guide prototype design and experimental validation, rather than provide exact real-world predictions.
+The apparent-temperature calculation follows the Steadman apparent-temperature formulation.
 
----
-
-## 17. Author
-
-Developed as part of an undergraduate physics project exploring the application of fundamental physical principles to low-cost workplace ventilation solutions.
-
+```text
+Steadman, R. G. (1994). Norms of apparent temperature in Australia.
+Australian Meteorological Magazine, 43, 1–16.
+https://doi.org/10.1071/ES94001
 ```
+
+The simplified form used in this project is:
+
+$$
+AT = T_a + 0.33e - 0.70v - 4.00
+$$
+
+where (e) is water vapour pressure and (v) is effective local wind speed.
+
+---
+
+## 20. Project Statement
+
+This project presents a simplified physics-based model for evaluating a plastic-bottle Venturi board as a passive local airflow amplifier for tropical food stall environments. The model estimates how incoming wind is transformed into ideal outlet wind, loss-corrected outlet wind, and finally felt wind speed at the user position. The felt wind speed is then used in the Steadman apparent-temperature model to compare apparent temperature before and after installation. The main result is predicted improvement in perceived thermal comfort, not actual air-temperature reduction. The model is intended to guide prototype design and experimental validation.
+
+---
+
+## 21. Author
+
+Developed as part of an undergraduate physics project exploring low-cost workplace ventilation solutions using fundamental physical principles.
