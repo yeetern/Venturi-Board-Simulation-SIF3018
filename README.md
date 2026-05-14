@@ -733,14 +733,6 @@ venturi-board-simulation/
 ├── README.md
 ```
 
-Example `requirements.txt`:
-
-```text
-streamlit
-numpy
-pandas
-```
-
 ---
 
 ## 18. Intended Applications
